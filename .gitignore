@@ -1,0 +1,9 @@
+
+.DS_Store
+Thumbs.db
+.env
+postgres_data/
+mysql_data/
+mongo_data/
+.idea/
+.vscode/
