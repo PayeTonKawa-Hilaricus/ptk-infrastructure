@@ -1,8 +1,8 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # -------------------------------------------------------------------
-  # 1. INFRASTRUCTURE (RabbitMQ)
+  # 1. INFRASTRUCTURE (RabbitMQ Local)
   # -------------------------------------------------------------------
   rabbitmq:
     image: rabbitmq:3-management
@@ -11,177 +11,120 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: admin123
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
     networks:
       - ptk-network
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
+      start_period: 40s
 
   # -------------------------------------------------------------------
-  # 2. BASES DE DONNÉES (PostgreSQL)
+  # 2. MICRO-SERVICES (NestJS + BDD Railway)
   # -------------------------------------------------------------------
-  db-auth:
-    image: postgres:15-alpine
-    container_name: ptk-db-auth
-    environment:
-      POSTGRES_USER: auth_user
-      POSTGRES_PASSWORD: auth_password
-      POSTGRES_DB: auth_db
-    networks:
-      - ptk-network
-    volumes:
-      - postgres_auth_data:/var/lib/postgresql/data
 
-  db-clients:
-    image: postgres:15-alpine
-    container_name: ptk-db-clients
-    environment:
-      POSTGRES_USER: client_user
-      POSTGRES_PASSWORD: client_password
-      POSTGRES_DB: client_db
-    networks:
-      - ptk-network
-    volumes:
-      - postgres_clients_data:/var/lib/postgresql/data
-
-  db-products:
-    image: postgres:15-alpine
-    container_name: ptk-db-products
-    environment:
-      POSTGRES_USER: product_user
-      POSTGRES_PASSWORD: product_password
-      POSTGRES_DB: product_db
-    networks:
-      - ptk-network
-    volumes:
-      - postgres_products_data:/var/lib/postgresql/data
-
-  db-orders:
-    image: postgres:15-alpine
-    container_name: ptk-db-orders
-    environment:
-      POSTGRES_USER: order_user
-      POSTGRES_PASSWORD: order_password
-      POSTGRES_DB: order_db
-    networks:
-      - ptk-network
-    volumes:
-      - postgres_orders_data:/var/lib/postgresql/data
-
-  # -------------------------------------------------------------------
-  # 3. MICRO-SERVICES (NestJS)
-  # -------------------------------------------------------------------
-  
   auth-service:
     build:
-      context: ./ptk-auth-service
+      context: ../ptk-auth-service
       target: development
     container_name: ptk-service-auth
-    command: npm run start:dev
+    # On génère le client Prisma pour Linux AVANT de lancer le serveur
+    command: sh -c "npx prisma generate && npm run start:dev"
     ports:
-      - "3001:3000" # Accessible sur localhost:3001
+      - "3001:3000"
     environment:
-      - DATABASE_HOST=db-auth
-      - DATABASE_PORT=5432
-      - DATABASE_USER=auth_user
-      - DATABASE_PASSWORD=auth_password
-      - DATABASE_NAME=auth_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      - DATABASE_URL=${AUTH_DATABASE_URL}
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
     depends_on:
-      - db-auth
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ptk-network
     volumes:
-      - ./ptk-auth-service:/usr/src/app
+      - ../ptk-auth-service:/usr/src/app
       - /usr/src/app/node_modules
 
   client-service:
     build:
-      context: ./ptk-client-service
+      context: ../ptk-client-service
       target: development
     container_name: ptk-service-clients
-    command: npm run start:dev
+    command: sh -c "npx prisma generate && npm run start:dev"
     ports:
       - "3002:3000"
     environment:
-      - DATABASE_HOST=db-clients
-      - DATABASE_PORT=5432
-      - DATABASE_USER=client_user
-      - DATABASE_PASSWORD=client_password
-      - DATABASE_NAME=client_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      - DATABASE_URL=${CLIENT_DATABASE_URL}
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
     depends_on:
-      - db-clients
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ptk-network
     volumes:
-      - ./ptk-client-service:/usr/src/app
+      - ../ptk-client-service:/usr/src/app
       - /usr/src/app/node_modules
 
   product-service:
     build:
-      context: ./ptk-product-service
+      context: ../ptk-product-service
       target: development
     container_name: ptk-service-products
-    command: npm run start:dev
+    command: sh -c "npx prisma generate && npm run start:dev"
     ports:
       - "3003:3000"
     environment:
-      - DATABASE_HOST=db-products
-      - DATABASE_PORT=5432
-      - DATABASE_USER=product_user
-      - DATABASE_PASSWORD=product_password
-      - DATABASE_NAME=product_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      - DATABASE_URL=${PRODUCT_DATABASE_URL}
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
     depends_on:
-      - db-products
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ptk-network
     volumes:
-      - ./ptk-product-service:/usr/src/app
+      - ../ptk-product-service:/usr/src/app
       - /usr/src/app/node_modules
 
   order-service:
     build:
-      context: ./ptk-order-service
+      context: ../ptk-order-service
       target: development
     container_name: ptk-service-orders
-    command: npm run start:dev
+    command: sh -c "npx prisma generate && npm run start:dev"
     ports:
       - "3004:3000"
     environment:
-      - DATABASE_HOST=db-orders
-      - DATABASE_PORT=5432
-      - DATABASE_USER=order_user
-      - DATABASE_PASSWORD=order_password
-      - DATABASE_NAME=order_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      - DATABASE_URL=${ORDER_DATABASE_URL}
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
     depends_on:
-      - db-orders
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ptk-network
     volumes:
-      - ./ptk-order-service:/usr/src/app
+      - ../ptk-order-service:/usr/src/app
       - /usr/src/app/node_modules
 
   # -------------------------------------------------------------------
-  # 4. MONITORING
+  # 3. MONITORING
   # -------------------------------------------------------------------
   prometheus:
     image: prom/prometheus
     container_name: ptk-prometheus
     ports:
       - "9090:9090"
-    # volumes:
-      # - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - ptk-network
 
@@ -200,14 +143,3 @@ services:
 networks:
   ptk-network:
     driver: bridge
-
-volumes:
-  postgres_auth_data:
-  postgres_clients_data:
-  postgres_products_data:
-  postgres_orders_data:
-
-
-### Comment lancer le tout ?
-# Dans le terminal, à la racine du projet, exécutez la commande suivante :
-#     docker-compose up -d --build
