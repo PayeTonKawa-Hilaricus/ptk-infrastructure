@@ -9,6 +9,48 @@ Passage d'une architecture legacy vers des micro-services conteneurisés avec No
 - **Services & Broker :** Hébergés localement via Docker containers.
 - **Persistance :** Bases de données PostgreSQL hébergées sur le Cloud (Railway).
 
+### Schéma de l'architecture
+```mermaid
+graph TD
+    User((Utilisateur / Front))
+
+    subgraph "Local : Infrastructure Docker"
+        AuthAPI[API Authentification<br/>Port: 3001]
+        ClientAPI[API Clients<br/>Port: 3002]
+        ProductAPI[API Produits<br/>Port: 3003]
+        OrderAPI[API Commandes<br/>Port: 3004]
+
+        RabbitMQ{RabbitMQ<br/>Broker Local}
+    end
+
+    subgraph "Cloud : Railway (Bases de données)"
+        DB_Auth[(Postgres Auth)]
+        DB_Client[(Postgres Clients)]
+        DB_Product[(Postgres Produits)]
+        DB_Order[(Postgres Commandes)]
+    end
+
+    %% Flux Utilisateur
+    User -->|Login / JWT| AuthAPI
+    User -->|CRUD Client| ClientAPI
+    User -->|Consultation Stock| ProductAPI
+    User -->|Création Commande| OrderAPI
+
+    %% Connexion aux BDD Distantes
+    AuthAPI ---|Internet| DB_Auth
+    ClientAPI ---|Internet| DB_Client
+    ProductAPI ---|Internet| DB_Product
+    OrderAPI ---|Internet| DB_Order
+
+    %% Communication Inter-services
+    OrderAPI -.->|HTTP: Vérif Token| AuthAPI
+    OrderAPI -.->|HTTP: Vérif Client| ClientAPI
+
+    %% Communication Asynchrone
+    OrderAPI --"Event: order_created"--> RabbitMQ
+    RabbitMQ --"Update Stock"--> ProductAPI
+```
+
 ### Tableau des Services
 
 | Service   | Port Local | Description                                | Documentation (Swagger)   |
@@ -24,7 +66,7 @@ Passage d'une architecture legacy vers des micro-services conteneurisés avec No
 | :-------------- | :---- | :---------------------- | :------------------------------- |
 | **Grafana**     | 3005  | admin / admin           | Tableaux de bord de surveillance |
 | **Prometheus**  | 9090  | (Aucun)                 | Collecte des métriques           |
-| **RabbitMQ UI** | 15672 | admin / admin123           | Gestion des files d'attente      |
+| **RabbitMQ UI** | 15672 | admin / admin123        | Gestion des files d'attente      |
 
 ## 🚀 Démarrage Rapide
 
