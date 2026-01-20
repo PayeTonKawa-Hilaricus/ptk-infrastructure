@@ -1,9 +1,11 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # -------------------------------------------------------------------
-  # 1. INFRASTRUCTURE (RabbitMQ)
+  # 1. INFRASTRUCTURE (Bases de données & Broker Local)
   # -------------------------------------------------------------------
+
+  # --- Message Broker ---
   rabbitmq:
     image: rabbitmq:3-management
     container_name: ptk-rabbitmq
@@ -11,177 +13,191 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: admin123
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-password}
     networks:
       - ptk-network
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
+      start_period: 40s
 
-  # -------------------------------------------------------------------
-  # 2. BASES DE DONNÉES (PostgreSQL)
-  # -------------------------------------------------------------------
-  db-auth:
+  # --- DB Auth ---
+  postgres-auth:
     image: postgres:15-alpine
     container_name: ptk-db-auth
     environment:
-      POSTGRES_USER: auth_user
-      POSTGRES_PASSWORD: auth_password
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432" # Port externe 5432
+    volumes:
+      - ./data/auth:/var/lib/postgresql/data
     networks:
       - ptk-network
-    volumes:
-      - postgres_auth_data:/var/lib/postgresql/data
 
-  db-clients:
+  # --- DB Client ---
+  postgres-client:
     image: postgres:15-alpine
-    container_name: ptk-db-clients
+    container_name: ptk-db-client
     environment:
-      POSTGRES_USER: client_user
-      POSTGRES_PASSWORD: client_password
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: client_db
+    ports:
+      - "5433:5432" # Port externe 5433 (pour éviter conflit)
+    volumes:
+      - ./data/client:/var/lib/postgresql/data
     networks:
       - ptk-network
-    volumes:
-      - postgres_clients_data:/var/lib/postgresql/data
 
-  db-products:
+  # --- DB Product ---
+  postgres-product:
     image: postgres:15-alpine
-    container_name: ptk-db-products
+    container_name: ptk-db-product
     environment:
-      POSTGRES_USER: product_user
-      POSTGRES_PASSWORD: product_password
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: product_db
+    ports:
+      - "5434:5432" # Port externe 5434
+    volumes:
+      - ./data/product:/var/lib/postgresql/data
     networks:
       - ptk-network
-    volumes:
-      - postgres_products_data:/var/lib/postgresql/data
 
-  db-orders:
+  # --- DB Order ---
+  postgres-order:
     image: postgres:15-alpine
-    container_name: ptk-db-orders
+    container_name: ptk-db-order
     environment:
-      POSTGRES_USER: order_user
-      POSTGRES_PASSWORD: order_password
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: order_db
+    ports:
+      - "5435:5432" # Port externe 5435
+    volumes:
+      - ./data/order:/var/lib/postgresql/data
     networks:
       - ptk-network
-    volumes:
-      - postgres_orders_data:/var/lib/postgresql/data
 
   # -------------------------------------------------------------------
-  # 3. MICRO-SERVICES (NestJS)
+  # 2. MICRO-SERVICES (NestJS + BDD Locales Docker)
   # -------------------------------------------------------------------
-  
+
   auth-service:
     build:
-      context: ./ptk-auth-service
+      context: ../ptk-auth-service
       target: development
     container_name: ptk-service-auth
-    command: npm run start:dev
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
     ports:
-      - "3001:3000" # Accessible sur localhost:3001
+      - "3001:3000"
     environment:
-      - DATABASE_HOST=db-auth
-      - DATABASE_PORT=5432
-      - DATABASE_USER=auth_user
-      - DATABASE_PASSWORD=auth_password
-      - DATABASE_NAME=auth_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      # Connexion interne Docker vers le service postgres-auth
+      - DATABASE_URL=postgresql://user:password@postgres-auth:5432/auth_db?schema=public
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-user}:${RABBITMQ_DEFAULT_PASS:-password}@rabbitmq:5672
     depends_on:
-      - db-auth
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+      postgres-auth:
+        condition: service_started
     networks:
       - ptk-network
     volumes:
-      - ./ptk-auth-service:/usr/src/app
+      - ../ptk-auth-service:/usr/src/app
       - /usr/src/app/node_modules
 
   client-service:
     build:
-      context: ./ptk-client-service
+      context: ../ptk-client-service
       target: development
     container_name: ptk-service-clients
-    command: npm run start:dev
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
     ports:
       - "3002:3000"
     environment:
-      - DATABASE_HOST=db-clients
-      - DATABASE_PORT=5432
-      - DATABASE_USER=client_user
-      - DATABASE_PASSWORD=client_password
-      - DATABASE_NAME=client_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      # Connexion interne Docker vers le service postgres-client
+      - DATABASE_URL=postgresql://user:password@postgres-client:5432/client_db?schema=public
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-user}:${RABBITMQ_DEFAULT_PASS:-password}@rabbitmq:5672
     depends_on:
-      - db-clients
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+      postgres-client:
+        condition: service_started
     networks:
       - ptk-network
     volumes:
-      - ./ptk-client-service:/usr/src/app
+      - ../ptk-client-service:/usr/src/app
       - /usr/src/app/node_modules
 
   product-service:
     build:
-      context: ./ptk-product-service
+      context: ../ptk-product-service
       target: development
     container_name: ptk-service-products
-    command: npm run start:dev
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
     ports:
       - "3003:3000"
     environment:
-      - DATABASE_HOST=db-products
-      - DATABASE_PORT=5432
-      - DATABASE_USER=product_user
-      - DATABASE_PASSWORD=product_password
-      - DATABASE_NAME=product_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      # Connexion interne Docker vers le service postgres-product
+      - DATABASE_URL=postgresql://user:password@postgres-product:5432/product_db?schema=public
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-user}:${RABBITMQ_DEFAULT_PASS:-password}@rabbitmq:5672
     depends_on:
-      - db-products
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+      postgres-product:
+        condition: service_started
     networks:
       - ptk-network
     volumes:
-      - ./ptk-product-service:/usr/src/app
+      - ../ptk-product-service:/usr/src/app
       - /usr/src/app/node_modules
 
   order-service:
     build:
-      context: ./ptk-order-service
+      context: ../ptk-order-service
       target: development
     container_name: ptk-service-orders
-    command: npm run start:dev
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
     ports:
       - "3004:3000"
     environment:
-      - DATABASE_HOST=db-orders
-      - DATABASE_PORT=5432
-      - DATABASE_USER=order_user
-      - DATABASE_PASSWORD=order_password
-      - DATABASE_NAME=order_db
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=3000
+      # Connexion interne Docker vers le service postgres-order
+      - DATABASE_URL=postgresql://user:password@postgres-order:5432/order_db?schema=public
+      - JWT_SECRET=SUPER_SECRET_KEY_A_CHANGER_DANS_ENV
+      - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-user}:${RABBITMQ_DEFAULT_PASS:-password}@rabbitmq:5672
     depends_on:
-      - db-orders
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+      postgres-order:
+        condition: service_started
     networks:
       - ptk-network
     volumes:
-      - ./ptk-order-service:/usr/src/app
+      - ../ptk-order-service:/usr/src/app
       - /usr/src/app/node_modules
 
   # -------------------------------------------------------------------
-  # 4. MONITORING
+  # 3. MONITORING
   # -------------------------------------------------------------------
   prometheus:
     image: prom/prometheus
     container_name: ptk-prometheus
     ports:
       - "9090:9090"
-    # volumes:
-      # - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - ptk-network
 
@@ -200,14 +216,3 @@ services:
 networks:
   ptk-network:
     driver: bridge
-
-volumes:
-  postgres_auth_data:
-  postgres_clients_data:
-  postgres_products_data:
-  postgres_orders_data:
-
-
-### Comment lancer le tout ?
-# Dans le terminal, à la racine du projet, exécutez la commande suivante :
-#     docker-compose up -d --build
