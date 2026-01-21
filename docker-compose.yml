@@ -88,7 +88,7 @@ services:
   # 2. MICRO-SERVICES (NestJS + BDD Locales Docker)
   # -------------------------------------------------------------------
 
-  auth-service:
+  ptk-auth-service:
     build:
       context: ../ptk-auth-service
       target: development
@@ -113,7 +113,7 @@ services:
       - ../ptk-auth-service:/usr/src/app
       - /usr/src/app/node_modules
 
-  client-service:
+  ptk-client-service:
     build:
       context: ../ptk-client-service
       target: development
@@ -138,7 +138,7 @@ services:
       - ../ptk-client-service:/usr/src/app
       - /usr/src/app/node_modules
 
-  product-service:
+  ptk-product-service:
     build:
       context: ../ptk-product-service
       target: development
@@ -163,7 +163,7 @@ services:
       - ../ptk-product-service:/usr/src/app
       - /usr/src/app/node_modules
 
-  order-service:
+  ptk-order-service:
     build:
       context: ../ptk-order-service
       target: development
