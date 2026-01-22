@@ -187,6 +187,14 @@ services:
     volumes:
       - ../ptk-order-service:/usr/src/app
       - /usr/src/app/node_modules
+  ptk-frontend:
+    build:
+      context: ../ptk-frontend # Assure-toi que le dossier s'appelle bien comme ça sur PC2
+    container_name: ptk-frontend
+    ports:
+      - "8080:80" # On rend le site accessible sur le port 8080 du PC2
+    networks:
+      - ptk-network
 
   # -------------------------------------------------------------------
   # 3. MONITORING
