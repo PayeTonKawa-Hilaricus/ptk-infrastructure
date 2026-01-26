@@ -1,19 +1,21 @@
 global:
-  scrape_interval: 5s # On aspire les données toutes les 5 secondes
+  scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'auth-service'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['auth-service:3000'] # Nom du service Docker : Port interne
+      - targets: ["localhost:9090"]
 
-  - job_name: 'client-service'
+  - job_name: "ptk-microservices"
+    metrics_path: "/metrics"
     static_configs:
-      - targets: ['client-service:3000']
+      - targets:
+          - "ptk-service-auth:3000" # C'était 'auth-service' avant (FAUX)
+          - "ptk-service-clients:3000" # C'était 'client-service' avant (FAUX)
+          - "ptk-service-products:3000" # C'était 'product-service' avant (FAUX)
+          - "ptk-service-orders:3000" # C'était 'order-service' avant (FAUX)
 
-  - job_name: 'product-service'
+  - job_name: "rabbitmq"
+    metrics_path: "/metrics"
     static_configs:
-      - targets: ['product-service:3000']
-
-  - job_name: 'order-service'
-    static_configs:
-      - targets: ['order-service:3000']
+      - targets: ["ptk-rabbitmq:15692"]
